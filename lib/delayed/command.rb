@@ -4,12 +4,12 @@ require 'optparse'
 
 module Delayed
   class Command
-    attr_accessor :worker_count, :root_path, :is_rack
+    attr_accessor :worker_count, :root_path, :environment
     
     def initialize(args)
       @options = {:quiet => true}
       @worker_count = 1
-      @is_rack = false
+      @configuration = nil
       @root_path = RAILS_ROOT if defined?(RAILS_ROOT)
       
       opts = OptionParser.new do |opts|
@@ -19,15 +19,12 @@ module Delayed
           puts opts
           exit 1
         end
-        opts.on('-r', '--rack', 'Specifies a rack application') do
-          self.root_path = RACK_ROOT
-          self.is_rack = true
-        end
-        opts.on('-l', '--load-path=PATH', 'Specify a custom path (i.e. not rails or rack)') do |p|
+        opts.on('-l', '--load-path=PATH', 'Specify a custom path (i.e. not rails)') do |p|
           self.root_path = p
         end
         opts.on('-e', '--environment=NAME', 'Specifies the environment to run this delayed jobs under (test/development/production).') do |e|
-          is_rack ? ENV['RACK_ENV'] = e : ENV['RAILS_ENV'] = e
+          self.environment = e
+          ENV['RAILS_ENV'] = e
         end
         opts.on('--min-priority N', 'Minimum priority of jobs to run.') do |n|
           @options[:min_priority] = n
@@ -41,7 +38,11 @@ module Delayed
       end
       @args = opts.parse!(args)
     end
-  
+
+    def configure(&block)
+      @configuration = block
+    end
+
     def daemonize
       worker_count.times do |worker_index|
         process_name = worker_count == 1 ? "delayed_job" : "delayed_job.#{worker_index}"
@@ -55,7 +56,7 @@ module Delayed
     def run(worker_name = nil)
       Dir.chdir(root_path)
       require File.join(root_path, 'config', 'environment') if ENV['RAILS_ENV']
-      
+      self.instance_eval(&@configuration) if @configuration
       # Replace the default logger
       logger = Logger.new(File.join(root_path, 'log', 'delayed_job.log'))
       logger.level = ActiveRecord::Base.logger.level
