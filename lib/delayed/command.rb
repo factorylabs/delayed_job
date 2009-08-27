@@ -46,19 +46,23 @@ module Delayed
     def daemonize
       worker_count.times do |worker_index|
         process_name = worker_count == 1 ? "delayed_job" : "delayed_job.#{worker_index}"
-        FileUtils.mkdir_p "#{root_path}/tmp/pids"
-        Daemons.run_proc(process_name, :dir => "#{root_path}/tmp/pids", :dir_mode => :normal, :ARGV => @args) do |*args|
+        FileUtils.mkdir_p "#{self.root_path}/tmp/pids"
+        Daemons.run_proc(process_name, :dir => "#{self.root_path}/tmp/pids", :dir_mode => :normal, :ARGV => @args) do |*args|
           run process_name
         end
       end
     end
     
     def run(worker_name = nil)
-      Dir.chdir(root_path)
-      require File.join(root_path, 'config', 'environment') if ENV['RAILS_ENV']
       self.instance_eval(&@configuration) if @configuration
+
+      Dir.chdir(self.root_path)
+      rails_environment = File.join(self.root_path, 'config', 'environment')
+      require rails_environment if File.exists?(rails_environment)
+
       # Replace the default logger
-      logger = Logger.new(File.join(root_path, 'log', 'delayed_job.log'))
+      logger = Logger.new(File.join(self.root_path, 'log', 'delayed_job.log'))
+      logger.info "*** starting Delayed Job daemon ***"
       logger.level = ActiveRecord::Base.logger.level
       ActiveRecord::Base.logger = logger
       ActiveRecord::Base.clear_active_connections!
@@ -67,7 +71,7 @@ module Delayed
       
       Delayed::Worker.new(@options).start  
     rescue => e
-      logger.fatal e
+      logger.fatal e unless logger.nil?
       STDERR.puts e.message
       exit 1
     end
